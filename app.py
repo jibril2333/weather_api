@@ -1,143 +1,76 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import requests
-import os
-from dotenv import load_dotenv
+from flask import Flask, request, jsonify  # 导入Flask框架核心组件
+from flask_cors import CORS  # 导入CORS扩展，用于处理跨域资源共享
+from dotenv import load_dotenv  # 导入dotenv，用于加载环境变量
 
-# 加载.env文件中的环境变量
+# 导入服务层组件
+from services.weather import WeatherService  # 导入天气服务，负责获取天气数据
+from services.ai_analysis import AIAnalysisService  # 导入AI分析服务，负责分析天气数据
+
+# 加载环境变量，从.env文件中读取配置
 load_dotenv()
 
+# 初始化Flask应用
 app = Flask(__name__)
-CORS(app)  # 允许跨域访问
+CORS(app)  # 启用CORS，允许前端跨域访问API
 
-# OpenAI API配置
-# 从环境变量获取API密钥
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
-
-def get_coordinates(city_name):
-    # 使用Open-Meteo Geocoding API替换简单映射
-    geocoding_url = "https://geocoding-api.open-meteo.com/v1/search"
-    params = {
-        "name": city_name,
-        "count": 1,  # 只返回最匹配的结果
-        "language": "en",
-        "format": "json"
-    }
-    
-    try:
-        response = requests.get(geocoding_url, params=params)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get("results") and len(data["results"]) > 0:
-                result = data["results"][0]
-                return (result["latitude"], result["longitude"])
-        return None
-    except Exception as e:
-        print(f"Geocoding error: {e}")
-        return None
+# 初始化服务实例
+weather_service = WeatherService()  # 创建天气服务实例
+ai_service = AIAnalysisService()  # 创建AI分析服务实例
 
 @app.route("/weather", methods=["GET"])
 def get_weather():
-    city = request.args.get("city")
-    if not city:
-        return jsonify({"error": "City parameter is required"}), 400
-        
-    coords = get_coordinates(city)
-    if not coords:
-        return jsonify({"error": "Could not find coordinates for the city"}), 400
-
-    lat, lon = coords
-    url = "https://api.open-meteo.com/v1/forecast"
+    """
+    获取天气数据API端点
     
-    # 请求更完整的天气数据
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "hourly": "temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m",
-        "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,sunrise,sunset",
-        "current": "temperature_2m,relative_humidity_2m,weather_code",
-        "timezone": "auto"
-    }
-
-    response = requests.get(url, params=params)
-    if response.status_code != 200:
-        return jsonify({"error": "Failed to fetch weather"}), 500
-
-    # 返回完整的天气数据
-    data = response.json()
-    data["city_name"] = city
-    return jsonify(data)
-
-# 添加一个新的路由，专门用于获取坐标
-@app.route("/geocode", methods=["GET"])
-def geocode():
+    接收参数:
+        city (str): 城市名称，通过URL查询参数传递
+        
+    返回:
+        JSON: 天气数据或错误信息
+        状态码: 200表示成功，400表示请求参数错误，500表示服务器错误
+    """
+    # 从请求参数中获取城市名称
     city = request.args.get("city")
     if not city:
+        # 如果未提供城市参数，返回错误信息
         return jsonify({"error": "City parameter is required"}), 400
         
-    coords = get_coordinates(city)
-    if not coords:
-        return jsonify({"error": "Could not find coordinates for the city"}), 400
-        
-    lat, lon = coords
-    return jsonify({
-        "city": city,
-        "latitude": lat,
-        "longitude": lon
-    })
+    # 调用天气服务获取数据
+    # weather_service.get_weather_data会返回数据和状态码
+    data, status_code = weather_service.get_weather_data(city)
+    return jsonify(data), status_code
 
-# 添加OpenAI API服务路由
 @app.route("/ai/weather-analysis", methods=["POST"])
 def ai_weather_analysis():
-    # 检查API密钥是否配置
-    if not OPENAI_API_KEY:
-        return jsonify({"error": "OpenAI API密钥未配置。请在环境变量中设置OPENAI_API_KEY"}), 500
+    """
+    AI天气分析API端点
     
-    # 从请求中获取数据
+    请求体格式(JSON):
+        {
+            "weather_data": {...},  # 天气数据对象
+            "query": "用户问题"      # 用户想要分析的问题
+        }
+        
+    返回:
+        JSON: AI分析结果或错误信息
+        状态码: 200表示成功，400表示请求参数错误，500表示服务器错误
+    """
+    # 从POST请求体中获取JSON数据
     data = request.json
+    # 验证请求数据的完整性
     if not data or not data.get("weather_data") or not data.get("query"):
         return jsonify({"error": "请求缺少必要参数"}), 400
     
+    # 提取天气数据和用户查询
     weather_data = data.get("weather_data")
     user_query = data.get("query")
     
-    # 构建发送给OpenAI的消息
-    messages = [
-        {"role": "system", "content": "你是一位天气分析专家，请根据提供的天气数据回答用户的问题。"},
-        {"role": "user", "content": f"基于以下天气数据:\n{str(weather_data)}\n\n用户问题: {user_query}"}
-    ]
-    
-    # 设置API请求头和数据
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": "gpt-3.5-turbo",  # 可根据需要更改模型
-        "messages": messages,
-        "temperature": 0.7
-    }
-    
-    try:
-        # 发送请求到OpenAI API
-        response = requests.post(OPENAI_API_URL, headers=headers, json=payload)
-        response.raise_for_status()  # 如果请求失败，抛出异常
-        
-        # 解析响应
-        result = response.json()
-        ai_response = result["choices"][0]["message"]["content"]
-        
-        return jsonify({
-            "analysis": ai_response
-        })
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"OpenAI API请求失败: {str(e)}"}), 500
-    except KeyError as e:
-        return jsonify({"error": f"OpenAI API响应解析失败: {str(e)}"}), 500
-    except Exception as e:
-        return jsonify({"error": f"处理请求时发生错误: {str(e)}"}), 500
+    # 调用AI服务分析天气
+    # ai_service.analyze_weather会返回分析结果和状态码
+    result, status_code = ai_service.analyze_weather(weather_data, user_query)
+    return jsonify(result), status_code
 
+# 应用入口点
 if __name__ == "__main__":
+    # 启动Flask应用，debug=True表示开发模式，会自动重载代码
     app.run(debug=True)
