@@ -1,76 +1,77 @@
-from flask import Flask, request, jsonify  # 导入Flask框架核心组件
-from flask_cors import CORS  # 导入CORS扩展，用于处理跨域资源共享
-from dotenv import load_dotenv  # 导入dotenv，用于加载环境变量
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
-# 导入服务层组件
-from services.weather import WeatherService  # 导入天气服务，负责获取天气数据
-from services.ai_analysis import AIAnalysisService  # 导入AI分析服务，负责分析天气数据
+from services.weather import WeatherService
+from services.ai_analysis import AIAnalysisService
 
-# 加载环境变量，从.env文件中读取配置
-load_dotenv()
-
-# 初始化Flask应用
 app = Flask(__name__)
-CORS(app)  # 启用CORS，允许前端跨域访问API
+CORS(app)  # Enable CORS to allow cross-origin requests from frontend
 
-# 初始化服务实例
-weather_service = WeatherService()  # 创建天气服务实例
-ai_service = AIAnalysisService()  # 创建AI分析服务实例
+# Initialize service instances
+weather_service = WeatherService()
+ai_service = AIAnalysisService()
 
 @app.route("/weather", methods=["GET"])
 def get_weather():
     """
-    获取天气数据API端点
+    Weather data API endpoint
     
-    接收参数:
-        city (str): 城市名称，通过URL查询参数传递
+    Parameters:
+        city (str): City name, passed as URL query parameter
         
-    返回:
-        JSON: 天气数据或错误信息
-        状态码: 200表示成功，400表示请求参数错误，500表示服务器错误
+    Returns:
+        JSON: Weather data or error message
+        Status code: 200 for success, 400 for request error, 500 for server error
     """
-    # 从请求参数中获取城市名称
     city = request.args.get("city")
     if not city:
-        # 如果未提供城市参数，返回错误信息
         return jsonify({"error": "City parameter is required"}), 400
         
-    # 调用天气服务获取数据
-    # weather_service.get_weather_data会返回数据和状态码
     data, status_code = weather_service.get_weather_data(city)
     return jsonify(data), status_code
 
 @app.route("/ai/weather-analysis", methods=["POST"])
 def ai_weather_analysis():
     """
-    AI天气分析API端点
+    AI weather analysis API endpoint, supporting multi-round conversations
     
-    请求体格式(JSON):
+    Request body format (JSON):
         {
-            "weather_data": {...},  # 天气数据对象
-            "query": "用户问题"      # 用户想要分析的问题
+            "query": "user question",  # Required, user's analysis question
+            "session_token": "xxx",  # Optional, session token to identify the same conversation
+            "conversation_history": [...],  # Optional, previous conversation history
+            "city": "city name"  # Optional, city name to get weather data
         }
         
-    返回:
-        JSON: AI分析结果或错误信息
-        状态码: 200表示成功，400表示请求参数错误，500表示服务器错误
+    Returns:
+        JSON: {
+            "analysis": "AI analysis result",
+            "session_token": "session token",
+            "conversation_history": [...], # Updated conversation history
+            "city": "city name"  # If city was included in the request
+        }
+        Status code: 200 for success, 400 for request error, 500 for server error
     """
-    # 从POST请求体中获取JSON数据
+    # Get JSON data from POST request body
     data = request.json
-    # 验证请求数据的完整性
-    if not data or not data.get("weather_data") or not data.get("query"):
-        return jsonify({"error": "请求缺少必要参数"}), 400
     
-    # 提取天气数据和用户查询
-    weather_data = data.get("weather_data")
+    if not data or not data.get("query"):
+        return jsonify({"error": "Request missing required parameter: query"}), 400
+    
+    # Extract parameters
     user_query = data.get("query")
+    session_token = data.get("session_token")
+    conversation_history = data.get("conversation_history")
+    city = data.get("city")
     
-    # 调用AI服务分析天气
-    # ai_service.analyze_weather会返回分析结果和状态码
-    result, status_code = ai_service.analyze_weather(weather_data, user_query)
+    result, status_code, session_token = ai_service.analyze_weather(
+        user_query=user_query,
+        conversation_history=conversation_history,
+        session_token=session_token,
+        city=city
+    )
+    
     return jsonify(result), status_code
 
-# 应用入口点
 if __name__ == "__main__":
-    # 启动Flask应用，debug=True表示开发模式，会自动重载代码
     app.run(debug=True)

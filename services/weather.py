@@ -3,36 +3,38 @@ import config
 
 class WeatherService:
     """
-    天气服务类，负责处理天气相关的API请求
+    Weather service class, responsible for handling weather-related API requests
     
-    主要功能:
-    1. 地理编码 - 将城市名称转换为经纬度坐标
-    2. 天气查询 - 根据经纬度获取详细天气数据
+    Main functions:
+    1. Geocoding - Converting city names to latitude and longitude coordinates
+    2. Weather data retrieval - Getting detailed weather data based on coordinates
     """
     
     def __init__(self):
         """
-        初始化天气服务
+        Initialize the weather service
         
-        设置地理编码API和天气API的URL，这些URL定义在config.py中
+        Set up geocoding API and weather API URLs, which are defined in config.py
         """
         self.geocoding_url = config.GEOCODING_API_URL
         self.weather_url = config.WEATHER_API_URL
     
     def get_coordinates(self, city_name):
         """
-        获取城市的经纬度坐标
+        Get latitude and longitude coordinates for a city
         
-        工作流程:
-        1. 构建地理编码API请求参数
-        2. 发送请求到地理编码API
-        3. 解析响应并提取坐标
+        Workflow:
+        1. Build geocoding API request parameters
+        2. Send request to the geocoding API
+        3. Parse response and extract coordinates
+        
+        Note: Currently only supports English city names
         
         Args:
-            city_name (str): 城市名称，例如 "Beijing"、"Tokyo"等
+            city_name (str): City name, e.g., "Shanghai", "Tokyo", etc.
             
         Returns:
-            tuple: (纬度, 经度) 如 (39.9075, 116.39723) 或 None（如果城市未找到）
+            tuple: (latitude, longitude) like (39.9075, 116.39723) or None (if city not found)
         """
         params = {
             "name": city_name,
@@ -48,30 +50,30 @@ class WeatherService:
                 return (result["latitude"], result["longitude"])
             return None
         except Exception as e:
-            print(f"地理编码API请求错误: {e}")
+            print(f"Geocoding API request error: {e}")
             return None
     
     def get_weather_data(self, city_name):
         """
-        通过城市名称获取天气数据
+        Get weather data through city name
         
-        工作流程:
-        1. 调用get_coordinates获取城市坐标
-        2. 构建天气API请求参数
-        3. 发送请求到天气API
-        4. 处理响应数据并返回
+        Workflow:
+        1. Call get_coordinates to obtain city coordinates
+        2. Build weather API request parameters
+        3. Send request to the weather API
+        4. Process response data and return
         
         Args:
-            city_name (str): 城市名称，例如 "Shanghai"、"New York"等
+            city_name (str): City name, e.g., "Shanghai", "New York", etc.
             
         Returns:
-            tuple: (天气数据字典, HTTP状态码)
-                成功: ({"temperature": 25, ...}, 200)
-                失败: ({"error": "错误信息"}, 错误状态码)
+            tuple: (Weather data dictionary, HTTP status code)
+                Success: ({"temperature": 25, ...}, 200)
+                Failure: ({"error": "error message"}, error status code)
         """
         coords = self.get_coordinates(city_name)
         if not coords:
-            return {"error": "无法找到该城市的坐标"}, 400
+            return {"error": "Could not find coordinates for the city"}, 400
 
         lat, lon = coords
         
@@ -90,4 +92,4 @@ class WeatherService:
                 data["city_name"] = city_name
             return data, status_code
         except Exception as e:
-            return {"error": f"获取天气数据失败: {str(e)}"}, 500 
+            return {"error": f"Failed to get weather data: {str(e)}"}, 500 
